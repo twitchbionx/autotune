@@ -1,29 +1,49 @@
 """
 Stress-test runner.
 
-Verified working CLI syntax for y-cruncher v0.8.7 Build 9547:
+Documented CLI for y-cruncher v0.8.7 (from Command Lines.txt):
 
-    y-cruncher.exe priority:5 stress
+    y-cruncher [startup options] stress [-M:N] [-D:N] [-TL:N] [algorithm ...]
 
-`priority:5 stress` starts the Component Stress Tester directly with
-defaults (all algorithms enabled, all logical cores, 120 sec per test,
-loops forever). We add priority:5 (above-normal) to ensure the load
-is heavy enough to surface instability. The deadline fires after
-`minutes` and we SIGTERM.
+We invoke:
 
-What didn't work and why:
-  * `bench stress-test -t N -l file.log` -- old syntax. The inner Kurumi
-    binary rejects "stress-test" as Invalid Parameter and waits at
-    "Press any key to continue", which our deadline-based termination
-    treated as PASS for an entire prior debugging cycle. False positive.
-  * `stress -t 1` -- accepted `stress` but rejected `-t` (no UNIX flags).
-  * Driving the interactive menu via stdin pipe -- y-cruncher's Kurumi
-    binary CRASHES (mini-dump) trying to read menu input from a pipe.
+    y-cruncher.exe skip-warnings pause:-2 priority:2 stress
+                   -D:{seconds_per_test} -TL:{total_seconds}
+                   BKT BBP SFTv4 SNT SVT
 
-We also explicitly VERIFY the run actually entered the stress test
-within ~20s; if it didn't (CLI mismatch, build mismatch, etc.) we
-return reason="ycruncher_setup_error" so the tuner aborts cleanly
-instead of silently passing on stale wall clock.
+  skip-warnings  -- no ENTER prompt at startup
+  pause:-2       -- NEVER pause, not even on error (kills the "Press any
+                    key to continue" hang we kept hitting before)
+  priority:2     -- High priority. (Docs say max valid is 3 / Realtime.
+                    Our previous "priority:5" was invalid and silently
+                    fell through to Below-Normal default.)
+  stress         -- Component Stress Tester
+  -D:N           -- N seconds per test (algorithm rotation interval)
+  -TL:N          -- total test time limit in seconds (y-cruncher exits
+                    cleanly when reached -- our deadline is a safety net)
+  BKT BBP SFTv4 SNT SVT
+                 -- ONLY cache-resident algorithms. Specifying any
+                    algorithm in v0.8.x disables the rest, so the
+                    memory-heavy FFTv4 / NTT63 / VSTv3 (each allocates
+                    246-703 MiB per thread) never run. With 32 threads
+                    those would total 16-22 GiB of constant memory
+                    bandwidth pressure -- enough to hard-reset DDR5
+                    XMP/EXPO platforms running above Intel IMC spec.
+
+What didn't work in earlier iterations:
+  * `bench stress-test -t N -l file.log`: rejected as Invalid Parameter,
+    binary then hung at "Press any key" while our deadline wall-clocked
+    out and falsely reported PASS. (Source of the original phantom
+    "stable at -10 mV" tuning result.)
+  * Driving the menu via piped stdin: Kurumi binary CRASHES (mini-dump)
+    trying to read menu input from a pipe.
+  * `stress` with no algorithm filter: hard-reset the platform on both
+    the 12900K and 14900K boxes due to memory-heavy algorithm pressure.
+
+We also explicitly VERIFY the run entered stress mode within ~20s; if
+it didn't (CLI mismatch, missing binary, etc.) we return reason=
+"ycruncher_setup_error" so the tuner aborts cleanly instead of silently
+passing on stale wall clock.
 """
 
 from __future__ import annotations
@@ -103,16 +123,25 @@ def run_ycruncher(
     if log_path.exists():
         log_path.unlink()
 
-    # Direct CLI invocation. priority:5 = above-normal so the stress is
-    # heavy. `stress` runs Component Stress Tester with defaults (all
-    # algorithms, all cores, 120s per test, loops forever).
-    # NOTE: seconds_per_test is currently informational only -- y-cruncher
-    # 0.8.7's `stress` keyword doesn't expose a per-test time arg via CLI
-    # without going through the interactive menu (which crashes from a
-    # piped stdin). We rely on our outer deadline to bound total runtime.
-    cmd = [str(ycruncher_path), "priority:5", "stress"]
+    # Documented CLI per y-cruncher v0.8.7 Command Lines.txt.
+    total_seconds = max(int(seconds_per_test) + 1, int(round(minutes * 60)))
+    cmd = [
+        str(ycruncher_path),
+        # ---- startup options ----
+        "skip-warnings",
+        "pause:-2",
+        "priority:2",
+        # ---- mode ----
+        "stress",
+        # ---- per-test rotation duration ----
+        f"-D:{int(seconds_per_test)}",
+        # ---- total time limit (y-cruncher exits cleanly when hit) ----
+        f"-TL:{total_seconds}",
+        # ---- algorithm filter: only cache-resident tests, NO memory-heavy
+        # ---- algorithms (FFTv4 / NTT63 / VSTv3) which thrash DDR5 IMC.
+        "BKT", "BBP", "SFTv4", "SNT", "SVT",
+    ]
     log.info("y-cruncher: %s", " ".join(cmd))
-    _ = seconds_per_test  # reserved for future use
 
     started = time.time()
     stats = RunStats()
