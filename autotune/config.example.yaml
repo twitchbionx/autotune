@@ -1,0 +1,73 @@
+# Auto-tuner config. The tuner enforces every value here in software --
+# it will never write a profile that exceeds these caps, even if y-cruncher
+# says the chip is stable.
+#
+# --- THIS FILE IS PRESET FOR: 14900K, delidded, custom water loop,
+#     E-cores disabled in BIOS, post-microcode-0x12B BIOS (Sept 2024+). ---
+#
+# If your setup differs, tighten caps before your first run.
+#
+# Units:
+#   voltages:   millivolts (signed offset applied to Vcore)
+#   temps:      degrees Celsius
+#   power:      watts
+#   ratios:     integer multiplier; actual clock = ratio * 100 MHz BCLK
+
+# --- voltage ---
+# 14900K long-term safe ceiling is around 1.40 V Vcore. Intel's own spec
+# allows momentary excursions to 1.55 V but sustained >1.40 V is where
+# you accumulate the kind of degradation that made headlines in 2024.
+# +75 mV over stock VID lands you in a reasonable margin for 5.8-6.0 GHz.
+max_vcore_offset_mv: 75
+min_vcore_offset_mv: -150
+
+# --- live kill-switch on Vcore (volts). The stress runner aborts if
+# the monitor observes this or higher. ---
+max_vcore_v: 1.400
+
+# --- thermal + power ---
+# Tjmax for 14900K is 100 C. Custom loop + delid should easily hold
+# mid-60s-to-70s under load, so 95 C is purely a safety net.
+max_temp_c: 95
+# With E-cores OFF, y-cruncher on a 14900K typically pulls 220-280 W.
+# 300 W gives headroom for the top of the sweep without limiting you.
+max_power_w: 300
+
+# --- ratio caps ---
+# 14900K P-core Max Turbo = 60 (6.0 GHz on 2 favored cores at stock).
+# With E-cores off, many chips will hit 60x all-core -- set cap to 61
+# if you want to try for the golden-sample tier.
+max_pcore_ratio: 60
+max_ecore_ratio: 44    # ignored when skip_ecore_sweep: true, but kept for
+                       # consistency if you re-enable E-cores later.
+
+# --- E-cores / ring ---
+# E-cores are BIOS-disabled on your system. This suppresses the E-core
+# sweep AND stops the tuner from writing a phantom E-core ratio even
+# if XTU reports one.
+skip_ecore_sweep: true
+
+# Ring/uncore tuning. With E-cores off, ring can typically climb to
+# ~50x (vs ~40x when E-cores are active). This adds real latency wins
+# that you don't get from the core sweep alone.
+tune_ring_ratio: true
+max_ring_ratio: 50
+
+# --- stress durations ---
+preflight_minutes: 10
+per_step_minutes: 10
+final_confirm_minutes: 60
+ring_per_step_minutes: 5   # ring fails fast; shorter steps are fine
+
+# --- shmoo tuning ---
+voltage_step_down_mv: 5
+voltage_step_up_mv: 10
+voltage_shmoo_max_iterations: 20
+
+# --- safe-boot grace ---
+# After each applied profile, the watchdog will revert if the machine
+# reboots unexpectedly within (per_step_minutes * 60 + this) seconds.
+commit_grace_seconds: 120
+
+# --- paths ---
+ycruncher_path: "C:\\Tools\\y-cruncher\\y-cruncher.exe"

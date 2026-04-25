@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.Python
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# PyInstaller build artifacts
+build/
+dist/
+*.spec.bak
+
+# Runtime state (accidentally created under the repo when the default
+# state-dir wasn't writable or when running on Linux for testing)
+C:\ProgramData\autotune/
+autotune/state/
+autotune.log
+history.csv
+baseline.json
+last_known_good.json
+pending.json
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# OS / misc
+*.log
+*.tmp
